@@ -91,6 +91,11 @@ def get_all_patients():
     """Get all active patients"""
     return smart_queue.get_all_active_patients()
 
+@app.get("/queue")
+def get_queue(department: str = "ED"):
+    """Get queue for specific department (frontend compatibility)"""
+    return smart_queue.get_all_active_patients()
+
 @app.get("/api/patients/delayed")
 def get_delayed_patients():
     """Get patients exceeding ESI wait thresholds"""
@@ -129,7 +134,7 @@ async def create_patient(patient: PatientCreate):
     return patient_data
 
 @app.patch("/api/patients/{patient_id}/status")
-async def update_patient_status(patient_id: str, data: PatientStatusUpdate):
+async def update_patient_status(patient_id: str, data: PatientStatusUpdate, department: str = "ED"):
     """Update patient status"""
     patient = smart_queue.get(patient_id)
     if not patient:
@@ -141,6 +146,19 @@ async def update_patient_status(patient_id: str, data: PatientStatusUpdate):
     # Broadcast update
     await sio.emit('patient:updated', patient_data)
 
+    return patient_data
+
+@app.patch("/patients/{patient_id}/status")
+async def update_patient_status_compat(patient_id: str, status: str, department: str = "ED"):
+    """Update patient status (frontend compatibility - accepts status as query param)"""
+    patient = smart_queue.get(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    smart_queue.update_status(patient_id, status)
+    patient_data = patient.to_dict()
+
+    await sio.emit('patient:updated', patient_data)
     return patient_data
 
 @app.patch("/api/patients/{patient_id}/bed")
@@ -174,6 +192,11 @@ async def assign_bed_to_patient(patient_id: str, data: BedAssignment):
 @app.get("/api/beds")
 def get_all_beds(status: Optional[str] = None):
     """Get all beds, optionally filter by status"""
+    return bed_registry.list_beds(status=status)
+
+@app.get("/beds")
+def get_beds_compat(status: Optional[str] = None):
+    """Get all beds (frontend compatibility)"""
     return bed_registry.list_beds(status=status)
 
 @app.get("/api/beds/{bed_id}")
@@ -214,6 +237,98 @@ async def free_bed(bed_id: str):
     await sio.emit('bed:updated', bed_data)
 
     return bed_data
+
+# ============================================================================
+# Additional Endpoints for Frontend Compatibility
+# ============================================================================
+
+class AssignBestBedRequest(BaseModel):
+    patient_id: str
+    needed_bed_type: Optional[str] = None
+    needed_section: Optional[str] = None
+    required_features: List[str] = []
+
+@app.post("/beds/assign_best")
+async def assign_best_bed(payload: AssignBestBedRequest):
+    """Assign best available bed to patient"""
+    bed_id = bed_registry.assign_best_available(
+        patient_id=payload.patient_id,
+        needed_bed_type=payload.needed_bed_type,
+        needed_section=payload.needed_section,
+        required_features=payload.required_features
+    )
+
+    if not bed_id:
+        raise HTTPException(status_code=404, detail="No matching open bed found")
+
+    bed = bed_registry.get(bed_id)
+    if not bed:
+        raise HTTPException(status_code=500, detail="Assigned bed not found")
+
+    # Also update patient's bed_id in SmartQueue
+    smart_queue.assign_bed(payload.patient_id, bed_id)
+
+    bed_data = bed.to_dict()
+    patient_data = smart_queue.get(payload.patient_id).to_dict()
+
+    # Broadcast both updates
+    await sio.emit('bed:updated', bed_data)
+    await sio.emit('patient:updated', patient_data)
+
+    return bed_data
+
+@app.get("/eta/{patient_id}")
+def estimate_eta(
+    patient_id: str,
+    department: str = "ED",
+    rooms_available: int = 1,
+    avg_service_min: int = 20
+):
+    """Estimate wait time for patient"""
+    patient = smart_queue.get(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Simple ETA calculation: count patients ahead with same/higher priority
+    patients_ahead = 0
+    for p in smart_queue._patients.values():
+        if p.status in ["AWAITING_TRIAGE", "TRIAGED", "AWAITING_BED"]:
+            # Higher priority (lower ESI) or same ESI but earlier arrival
+            if p.esi < patient.esi or (p.esi == patient.esi and p.arrival_ts < patient.arrival_ts):
+                patients_ahead += 1
+
+    eta_minutes = (patients_ahead / rooms_available) * avg_service_min
+
+    return {
+        "patient_id": patient_id,
+        "eta_minutes": int(eta_minutes)
+    }
+
+@app.post("/discharge/{patient_id}")
+async def discharge_patient(patient_id: str, department: str = "ED"):
+    """Discharge a patient"""
+    patient = smart_queue.get(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Update status to DISCHARGED
+    smart_queue.update_status(patient_id, "DISCHARGED")
+
+    # If patient has a bed, free it
+    if patient.bed_id:
+        bed_registry.free_bed(patient.bed_id)
+        bed_data = bed_registry.get(patient.bed_id).to_dict()
+        await sio.emit('bed:updated', bed_data)
+
+    patient_data = patient.to_dict()
+    await sio.emit('patient:updated', patient_data)
+
+    return patient_data
+
+@app.post("/patients")
+async def create_patient_compat(patient: PatientCreate):
+    """Create patient (frontend compatibility - no /api prefix)"""
+    return await create_patient(patient)
 
 # ============================================================================
 # Socket.IO Events
