@@ -5,6 +5,7 @@ import itertools
 from typing import Dict, List, Optional, Tuple
 
 from patient import Patient, PatientStatus  # assumes patient.py is in the same folder
+from patient_db import SQLitePatientStore
 
 UTC = timezone.utc
 _counter = itertools.count()  # ensures stable ordering for ties
@@ -17,13 +18,33 @@ class SmartQueue:
       3) Stable order via a monotonic counter
 
     Tracks all active patients (not just waiting for triage) for dashboard display.
+    Now with SQLite persistence!
     """
     def __init__(self, department: str = "ED"):
         self.department = department
         self._heap: List[Tuple[int, datetime, int, str]] = []  # (esi, arrival_ts, counter, patient_id)
         self._patients: Dict[str, Patient] = {}
+        self.store = SQLitePatientStore()  # Database persistence layer
+
+        # Load existing patients from database on startup
+        self._load_from_db()
 
     # ------------ internal helpers ------------
+    def _load_from_db(self) -> None:
+        """Load all active patients from database into memory on startup"""
+        patients = self.store.list_active_patients(department=self.department)
+        for p in patients:
+            self._patients[p.id] = p
+        self._rebuild_heap()
+
+    def _sync_to_db(self, patient: Patient) -> None:
+        """Save or update patient in database"""
+        existing = self.store.get_patient(patient.id)
+        if existing:
+            self.store.update_patient(patient)
+        else:
+            self.store.insert_patient(patient)
+
     def _key(self, p: Patient) -> Tuple[int, datetime, int, str]:
         # Lower ESI first, then earlier arrival, then stable counter, then id
         return (p.esi, p.arrival_ts, next(_counter), p.id)
@@ -50,6 +71,10 @@ class SmartQueue:
         self._patients[p.id] = p
         # Add to heap since default status is AWAITING_TRIAGE
         heapq.heappush(self._heap, self._key(p))
+
+        # Persist to database
+        self._sync_to_db(p)
+
         return p.id
 
     def get(self, patient_id: str) -> Optional[Patient]:
@@ -60,6 +85,7 @@ class SmartQueue:
         p.esi = new_esi
         p.last_assessed_ts = datetime.now(UTC)
         self._rebuild_heap()
+        self._sync_to_db(p)
 
     def update_status(self, patient_id: str, new_status: str) -> None:
         """Update patient status and record timestamp"""
@@ -67,6 +93,7 @@ class SmartQueue:
         p.update_status(new_status)
         # Only AWAITING_TRIAGE patients live in the heap
         self._rebuild_heap()
+        self._sync_to_db(p)
 
     def assign_bed(self, patient_id: str, bed_id: str) -> None:
         """Assign a bed to a patient and update status to IN_BED"""
@@ -74,16 +101,19 @@ class SmartQueue:
         p.bed_id = bed_id
         p.update_status(PatientStatus.IN_BED.value)
         self._rebuild_heap()
+        self._sync_to_db(p)
 
     def assign_nurse(self, patient_id: str, nurse_id: str) -> None:
         """Assign a nurse to a patient"""
         p = self._patients[patient_id]
         p.assigned_nurse_id = nurse_id
+        self._sync_to_db(p)
 
     def assign_physician(self, patient_id: str, physician_id: str) -> None:
         """Assign a physician to a patient"""
         p = self._patients[patient_id]
         p.assigned_physician_id = physician_id
+        self._sync_to_db(p)
 
     def next_awaiting_triage(self) -> Optional[Patient]:
         """Get the highest-priority patient awaiting triage without changing status"""

@@ -237,9 +237,8 @@ function wireRowButtons() {
 
       btn.disabled = true;
       try {
-        await api(`/patients/${patientId}/status?department=${encodeURIComponent(department)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ status })
+        await api(`/patients/${patientId}/status?department=${encodeURIComponent(department)}&status=${encodeURIComponent(status)}`, {
+          method: "PATCH"
         });
         await loadQueue();
       } catch (err) {
