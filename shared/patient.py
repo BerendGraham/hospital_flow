@@ -41,8 +41,8 @@ class Patient:
 
     # Assignments
     bed_id: Optional[str] = None
-    assigned_nurse_id: Optional[str] = None
-    assigned_physician_id: Optional[str] = None
+    assigned_nurse_id: Optional[str] = None  # For logging only
+    assigned_physician_id: Optional[str] = None  # For logging only
 
     # Notes
     notes: str = ""
