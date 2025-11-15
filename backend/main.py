@@ -4,6 +4,7 @@ ER Flow Dashboard - FastAPI Backend with Socket.IO
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 import socketio
@@ -403,6 +404,15 @@ async def discharge_patient(patient_id: str, department: str = "ED"):
 async def create_patient_compat(patient: PatientCreate):
     """Create patient (frontend compatibility - no /api prefix)"""
     return await create_patient(patient)
+
+# ============================================================================
+# Static Files - Serve Frontend
+# ============================================================================
+
+# Mount static files (frontend) - this serves the React/HTML frontend
+frontend_path = Path(__file__).parent.parent / "frontend"
+if frontend_path.exists():
+    app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="static")
 
 # ============================================================================
 # Socket.IO Events
