@@ -142,7 +142,69 @@
       </table>
     </section>
   </div>
-
+    <!-- Patient detail modal -->
+    <div id="patient-modal-backdrop" class="modal-backdrop" style="display:none;">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 id="modal-patient-name">Patient Name</h2>
+          <button id="patient-modal-close" class="btn-small btn-secondary">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-grid">
+            <div>
+              <div class="text-xs text-muted">Patient ID</div>
+              <div id="modal-patient-id" class="modal-value"></div>
+            </div>
+            <div>
+              <div class="text-xs text-muted">ESI</div>
+              <div id="modal-patient-esi" class="modal-value"></div>
+            </div>
+            <div>
+              <div class="text-xs text-muted">Age</div>
+              <div id="modal-patient-age" class="modal-value"></div>
+            </div>
+            <div>
+              <div class="text-xs text-muted">Gender</div>
+              <div id="modal-patient-gender" class="modal-value"></div>
+            </div>
+            <div>
+              <div class="text-xs text-muted">Department</div>
+              <div id="modal-patient-dept" class="modal-value"></div>
+            </div>
+            <div>
+              <div class="text-xs text-muted">Status</div>
+              <div id="modal-patient-status" class="modal-value"></div>
+            </div>
+            <div>
+              <div class="text-xs text-muted">Bed</div>
+              <div id="modal-patient-bed" class="modal-value"></div>
+            </div>
+            <div>
+              <div class="text-xs text-muted">Wait / Total</div>
+              <div id="modal-patient-wait" class="modal-value"></div>
+              <div class="text-xs text-muted">Total: <span id="modal-patient-total"></span></div>
+            </div>
+          </div>
+  
+          <hr />
+  
+          <div class="modal-section">
+            <h3 class="modal-subtitle">Chief Complaint</h3>
+            <p id="modal-patient-chief"></p>
+          </div>
+  
+          <div class="modal-section">
+            <h3 class="modal-subtitle">Notes</h3>
+            <p id="modal-patient-notes"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  
+    <script src="app.js"></script>
+  </body>
+  </html>
+  
   <script src="app.js"></script>
 </body>
 </html>
