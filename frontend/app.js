@@ -28,6 +28,7 @@ const navBeds = document.getElementById("nav-beds");
 const navPatients = document.getElementById("nav-patients");
 
 let currentPatients = [];
+let allPatients = []; // Store all patients for cross-reference in bed view
 
 const modalBackdrop = document.getElementById("patient-modal-backdrop");
 const modalCloseBtn = document.getElementById("patient-modal-close");
@@ -147,7 +148,6 @@ function renderQueue(patients) {
       <div class="row-actions">
         <button class="btn-small" data-save-status="${p.id}">Save status</button>
         <button class="btn-small" data-assign-bed="${p.id}">Assign bed</button>
-        <button class="btn-small btn-danger" data-discharge="${p.id}">Discharge</button>
       </div>
     `;
 
@@ -179,7 +179,7 @@ function renderBeds(beds) {
     const tr = document.createElement("tr");
 
     const nameCell = document.createElement("td");
-    nameCell.textContent = b.id;
+    nameCell.textContent = b.section || b.id.slice(0, 8) + "…";
 
     const typeCell = document.createElement("td");
     typeCell.textContent = b.bed_type;
@@ -194,7 +194,21 @@ function renderBeds(beds) {
     statusCell.innerHTML = `<span class="pill">${b.status}</span>`;
 
     const patientCell = document.createElement("td");
-    patientCell.textContent = b.patient_id ? b.patient_id.slice(0, 8) + "…" : "—";
+    if (b.patient_id) {
+      // Find patient in allPatients
+      const patient = allPatients.find(p => p.id === b.patient_id);
+      if (patient) {
+        patientCell.innerHTML = `
+          <button class="link-button patient-name" data-patient-id="${patient.id}">
+            ${patient.name}
+          </button>
+        `;
+      } else {
+        patientCell.textContent = b.patient_id.slice(0, 8) + "…";
+      }
+    } else {
+      patientCell.textContent = "—";
+    }
 
     tr.appendChild(nameCell);
     tr.appendChild(typeCell);
@@ -205,11 +219,14 @@ function renderBeds(beds) {
 
     bedsBody.appendChild(tr);
   });
+
+  // Wire up patient name click handlers for bed view
+  wirePatientNameButtons();
 }
 
 function renderPatients(patients) {
   if (!Array.isArray(patients) || patients.length === 0) {
-    patientsBody.innerHTML = `<tr><td colspan="7" class="text-muted">No patients found.</td></tr>`;
+    patientsBody.innerHTML = `<tr><td colspan="8" class="text-muted">No patients found.</td></tr>`;
     return;
   }
 
@@ -219,7 +236,14 @@ function renderPatients(patients) {
     const tr = document.createElement("tr");
 
     const nameCell = document.createElement("td");
-    nameCell.textContent = p.name;
+    nameCell.innerHTML = `
+      <div>
+        <button class="link-button patient-name" data-patient-id="${p.id}">
+          ${p.name}
+        </button>
+        <div class="text-xs text-muted">${p.chief_complaint || ""}</div>
+      </div>
+    `;
 
     const esiCell = document.createElement("td");
     esiCell.innerHTML = `<span class="${getEsiClass(p.esi)}">ESI ${p.esi}</span>`;
@@ -228,7 +252,21 @@ function renderPatients(patients) {
     deptCell.textContent = p.department || "ED";
 
     const statusCell = document.createElement("td");
-    statusCell.textContent = p.status;
+    statusCell.innerHTML = `
+      <div class="status-select-row">
+        <select class="inline-select" data-patient-id="${p.id}">
+          <option value="REGISTERED" ${p.status === "REGISTERED" ? "selected" : ""}>REGISTERED</option>
+          <option value="AWAITING_TRIAGE" ${p.status === "AWAITING_TRIAGE" ? "selected" : ""}>AWAITING_TRIAGE</option>
+          <option value="TRIAGED" ${p.status === "TRIAGED" ? "selected" : ""}>TRIAGED</option>
+          <option value="AWAITING_BED" ${p.status === "AWAITING_BED" ? "selected" : ""}>AWAITING_BED</option>
+          <option value="IN_BED" ${p.status === "IN_BED" ? "selected" : ""}>IN_BED</option>
+          <option value="AWAITING_DISPOSITION" ${p.status === "AWAITING_DISPOSITION" ? "selected" : ""}>AWAITING_DISPOSITION</option>
+          <option value="ADMITTED" ${p.status === "ADMITTED" ? "selected" : ""}>ADMITTED</option>
+          <option value="DISCHARGED" ${p.status === "DISCHARGED" ? "selected" : ""}>DISCHARGED</option>
+          <option value="LWBS" ${p.status === "LWBS" ? "selected" : ""}>LEFT W/O BEING SEEN</option>
+        </select>
+      </div>
+    `;
 
     const bedCell = document.createElement("td");
     bedCell.textContent = p.bed_id ? p.bed_id.slice(0, 8) + "…" : "—";
@@ -241,6 +279,13 @@ function renderPatients(patients) {
     const totalCell = document.createElement("td");
     totalCell.textContent = fmtMinutes(p.total_er_time_minutes);
 
+    const actionsCell = document.createElement("td");
+    actionsCell.innerHTML = `
+      <div class="row-actions">
+        <button class="btn-small" data-save-status-db="${p.id}">Save</button>
+      </div>
+    `;
+
     tr.appendChild(nameCell);
     tr.appendChild(esiCell);
     tr.appendChild(deptCell);
@@ -248,14 +293,53 @@ function renderPatients(patients) {
     tr.appendChild(bedCell);
     tr.appendChild(arrivalCell);
     tr.appendChild(totalCell);
+    tr.appendChild(actionsCell);
 
     patientsBody.appendChild(tr);
   });
+
+  wirePatientDbButtons();
+  wirePatientNameButtons();
 }
 
 // ------------- Button wiring -------------
+function wirePatientNameButtons() {
+  // Open patient detail modal when clicking on name (works across all views)
+  document.querySelectorAll(".patient-name").forEach((btn) => {
+    btn.onclick = () => {
+      const patientId = btn.getAttribute("data-patient-id");
+      openPatientModal(patientId);
+    };
+  });
+}
+
+function wirePatientDbButtons() {
+  // Save status in Patient Database view
+  document.querySelectorAll("[data-save-status-db]").forEach((btn) => {
+    btn.onclick = async () => {
+      const patientId = btn.getAttribute("data-save-status-db");
+      const select = document.querySelector(`select.inline-select[data-patient-id="${patientId}"]`);
+      const status = select.value;
+      const department = deptFilter.value;
+
+      btn.disabled = true;
+      try {
+        await api(`/patients/${patientId}/status?department=${encodeURIComponent(department)}&status=${encodeURIComponent(status)}`, {
+          method: "PATCH"
+        });
+        await loadPatientsDb();
+      } catch (err) {
+        alert("Failed to update status: " + err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  });
+}
+
 function findPatientById(patientId) {
-  return currentPatients.find((p) => p.id === patientId);
+  // First check currentPatients (queue view), then allPatients (database view)
+  return currentPatients.find((p) => p.id === patientId) || allPatients.find((p) => p.id === patientId);
 }
 
 function openPatientModal(patientId) {
@@ -330,35 +414,9 @@ function wireRowButtons() {
     };
   });
 
-  // Discharge
-  document.querySelectorAll("[data-discharge]").forEach((btn) => {
-    btn.onclick = async () => {
-      const patientId = btn.getAttribute("data-discharge");
-      const department = deptFilter.value;
-      if (!confirm("Discharge this patient?")) return;
+  // Wire patient name buttons
+  wirePatientNameButtons();
 
-      btn.disabled = true;
-      try {
-        await api(`/discharge/${patientId}?department=${encodeURIComponent(department)}`, {
-          method: "POST"
-        });
-        await loadQueue();
-        await loadBeds();
-      } catch (err) {
-        alert("Failed to discharge patient: " + err.message);
-      } finally {
-        btn.disabled = false;
-      }
-    };
-  });
-    // Open patient detail modal when clicking on name
-    document.querySelectorAll(".patient-name").forEach((btn) => {
-      btn.onclick = () => {
-        const patientId = btn.getAttribute("data-patient-id");
-        openPatientModal(patientId);
-      };
-    });
-  
   // Assign bed -> calls beds Database (DB) via /beds/assign_best
   document.querySelectorAll("[data-assign-bed]").forEach((btn) => {
     btn.onclick = async () => {
@@ -413,7 +471,12 @@ async function loadBeds() {
   if (!bedsBody) return; // in case you remove bed overview
   bedsErrorEl.style.display = "none";
   try {
-    const beds = await api(`/beds`);
+    // Load both beds and all patients so we can show patient names
+    const [beds, patients] = await Promise.all([
+      api(`/beds`),
+      api(`/patients_db`)
+    ]);
+    allPatients = patients; // Store for cross-reference
     renderBeds(beds);
   } catch (err) {
     bedsErrorEl.textContent = "Could not load beds: " + err.message;
@@ -427,6 +490,7 @@ async function loadPatientsDb() {
   patientsErrorEl.style.display = "none";
   try {
     const patients = await api(`/patients_db`);
+    allPatients = patients; // Store for cross-reference in bed view
     renderPatients(patients);
   } catch (err) {
     patientsErrorEl.textContent = "Could not load patients: " + err.message;
@@ -514,9 +578,60 @@ if (navBeds) navBeds.addEventListener("click", () => showView("beds"));
 if (navPatients) navPatients.addEventListener("click", () => showView("patients"));
 
 
-// ------------- Initial load & polling -------------
+// ------------- WebSocket Real-Time Updates -------------
+
+// Connect to Socket.IO server
+const socket = io("http://localhost:8000");
+
+// Listen for connection
+socket.on("connect", () => {
+  console.log("WebSocket connected!");
+});
+
+// Listen for initial state snapshot
+socket.on("state:snapshot", (data) => {
+  console.log("Received state snapshot:", data);
+  // Initial load happens below, so we can skip this or use it for faster initial render
+});
+
+// Listen for patient updates
+socket.on("patient:created", async (patient) => {
+  console.log("Patient created:", patient);
+  await loadQueue();
+  await loadPatientsDb();
+});
+
+socket.on("patient:updated", async (patient) => {
+  console.log("Patient updated:", patient);
+  await loadQueue();
+  await loadPatientsDb();
+});
+
+// Listen for bed updates
+socket.on("bed:updated", async (bed) => {
+  console.log("Bed updated:", bed);
+  await loadBeds();
+  await loadQueue(); // Reload queue in case bed assignment affects display
+});
+
+socket.on("bed:created", async (bed) => {
+  console.log("Bed created:", bed);
+  await loadBeds();
+});
+
+socket.on("disconnect", () => {
+  console.log("WebSocket disconnected");
+});
+
+socket.on("error", (error) => {
+  console.error("WebSocket error:", error);
+});
+
+// ------------- Initial load -------------
 
 showView("queue");     // start on Live Queue
-setInterval(loadQueue, 10_000);
-setInterval(loadBeds, 30_000);
+
+// Optional: Keep polling as fallback (can remove if WebSocket is reliable)
+// setInterval(loadQueue, 30_000);  // Reduced frequency since WebSocket handles updates
+// setInterval(loadBeds, 60_000);
 

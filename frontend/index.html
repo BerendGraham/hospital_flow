@@ -7,11 +7,18 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <h1>ER Triage & Bed Assignment</h1>
-  <p class="text-muted">
-    Patients are prioritized by Emergency Severity Index (ESI) and arrival time. This dashboard shows the live queue
-    and lets you update status or trigger bed assignment.
-  </p>
+  <header class="app-header">
+    <div class="header-content">
+      <img src="patientflow2.png" alt="Hospital Logo" class="logo" />
+      <div class="header-text">
+        <h1>ER Triage & Bed Assignment</h1>
+        <p class="text-muted">
+          Patients are prioritized by Emergency Severity Index (ESI) and arrival time. This dashboard shows the live queue
+          and lets you update status or trigger bed assignment.
+        </p>
+      </div>
+    </div>
+  </header>
 
   <!-- Top nav -->
   <div class="nav-bar">
@@ -242,19 +249,18 @@
             <th>Bed</th>
             <th>Arrival</th>
             <th>Total ER Time</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody id="patients-body">
-          <tr><td colspan="7" class="text-muted">Loading…</td></tr>
+          <tr><td colspan="8" class="text-muted">Loading…</td></tr>
         </tbody>
       </table>
     </section>
   </div>
 
-    <script src="app.js"></script>
+    <!-- Socket.IO client for real-time updates -->
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="app.js"></script>
   </body>
   </html>
-  
-  <script src="app.js"></script>
-</body>
-</html>

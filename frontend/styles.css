@@ -9,9 +9,50 @@
     background: #f3f4f6;
     color: #111827;
   }
-  
+
   h1, h2 {
     margin-top: 0;
+  }
+
+  /* Header with logo */
+  .app-header {
+    margin-bottom: 1rem;
+  }
+
+  .header-content {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .logo {
+    height: 100px;
+    width: auto;
+    object-fit: contain;
+  }
+
+  .header-text {
+    flex: 1;
+  }
+
+  .header-text h1 {
+    margin: 0 0 0.25rem 0;
+  }
+
+  .header-text p {
+    margin: 0;
+  }
+
+  @media (max-width: 640px) {
+    .header-content {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .logo {
+      height: 60px;
+    }
   }
   
   .page {
