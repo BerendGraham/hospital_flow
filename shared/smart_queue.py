@@ -134,3 +134,30 @@ class SmartQueue:
     def get_queue(self) -> List[dict]:
         """Legacy method - returns patients awaiting triage"""
         return self.get_patients_by_status(PatientStatus.AWAITING_TRIAGE.value)
+
+    def estimate_wait_minutes(self, patient_id: str, rooms_available: int, avg_service_min: int) -> int:
+        """
+        Very rough ETA:
+        - Build the triage queue (patients AWAITING_TRIAGE in this department),
+          sorted by ESI then arrival.
+        - Calculate how many people are ahead of this patient.
+        - ETA ~= (people_ahead / rooms_available) * avg_service_min
+        """
+        rooms_available = max(1, int(rooms_available))
+        avg_service_min = max(1, int(avg_service_min))
+
+        queue = [
+            p for p in self._patients.values()
+            if p.status == PatientStatus.AWAITING_TRIAGE.value and p.department == self.department
+        ]
+        queue.sort(key=lambda p: (p.esi, p.arrival_ts))
+
+        for index, p in enumerate(queue):
+            if p.id == patient_id:
+                people_ahead = index
+                eta = int((people_ahead * avg_service_min) / rooms_available)
+                return max(0, eta)
+
+        # If they aren't in the waiting queue, ETA is 0 for now
+        return 0
+

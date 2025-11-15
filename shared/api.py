@@ -14,7 +14,14 @@ router = APIRouter(tags=["v1"])
 @router.post("/patients", response_model=PatientRead)
 def add_patient(payload: PatientCreate):
     sq = get_queue(payload.department)
-    pid = sq.add_patient(name=payload.name, esi=payload.esi, notes=payload.notes or "")
+    pid = sq.add_patient(
+        name=payload.name,
+        esi=payload.esi,
+        chief_complaint=payload.chief_complaint,
+        age=payload.age,
+        gender=payload.gender,
+        notes=payload.notes or "",
+    )
     return sq.get(pid).to_dict()
 
 # ---------- Get queue snapshot ----------
@@ -70,7 +77,8 @@ def discharge(patient_id: str, department: str = Query("ED")):
     sq = get_queue(department)
     if not sq.get(patient_id):
         raise HTTPException(status_code=404, detail="Patient not found")
-    sq.discharge(patient_id)
+    sq.update_status(patient_id, "DISCHARGED")
+
     return sq.get(patient_id).to_dict()
 
 # ---------- Estimate ETA ----------
@@ -86,7 +94,6 @@ def eta(patient_id: str, department: str = Query("ED"),
         eta_minutes=sq.estimate_wait_minutes(patient_id, rooms_available, avg_service_min)
     )
 
-router = APIRouter(tags=["v1"])
 
 # Single global BedRegistry for demo
 bed_registry = BedRegistry()
@@ -120,17 +127,22 @@ class AssignBestBedRequest(BaseModel):
 @router.get("/beds", response_model=List[BedRead])
 def list_beds(status: Optional[str] = None):
     beds = bed_registry.list_beds(status=status)
-    return [BedRead.from_bed(b) for b in beds]
+    return [BedRead(**b) for b in beds]
 
 # ---------- Beds: assign best ----------
 @router.post("/beds/assign_best", response_model=BedRead)
 def assign_best_bed(payload: AssignBestBedRequest):
-    bed = bed_registry.assign_best_available(
+    bed_id = bed_registry.assign_best_available(
         patient_id=payload.patient_id,
         needed_bed_type=payload.needed_bed_type,
         needed_section=payload.needed_section,
         required_features=payload.required_features,
     )
-    if not bed:
+    if not bed_id:
         raise HTTPException(status_code=404, detail="No matching open bed")
+
+    bed = bed_registry.get(bed_id)
+    if not bed:
+        raise HTTPException(status_code=500, detail="Assigned bed not found")
+
     return BedRead.from_bed(bed)

@@ -12,7 +12,7 @@ import threading
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from bed import Bed              # <-- adjust to your real import path if needed
-from beds_db import SQLiteBedStore  # <-- adjust to your real import path if needed
+from beds_DB import SQLiteBedStore  # <-- adjust to your real import path if needed
 
 
 class BedRegistry:
