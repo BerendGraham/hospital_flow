@@ -1,7 +1,7 @@
 services:
   # Single Web Service (serves both API and frontend)
   - type: web
-    name: hospital-flow
+    name: patient-flow
     runtime: python
     buildCommand: pip install -r backend/requirements.txt
     startCommand: cd backend && python -m uvicorn main:socket_app --host 0.0.0.0 --port $PORT
