@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import socketio
 import sys
+import os
 from pathlib import Path
 
 # Add shared folder to path
@@ -16,6 +17,13 @@ sys.path.insert(0, str(shared_path))
 
 from smart_queue import SmartQueue
 from bed_registery import BedRegistry
+
+# ============================================================================
+# Demo Mode Configuration
+# ============================================================================
+
+# Set to True to automatically reset database on startup with demo data
+DEMO_MODE = True
 
 # ============================================================================
 # Initialize FastAPI and Socket.IO
@@ -60,7 +68,7 @@ class PatientCreate(BaseModel):
     chief_complaint: str
     age: int
     gender: str
-    notes: str = ""
+    notes: Optional[str] = None
 
 class PatientStatusUpdate(BaseModel):
     new_status: str
@@ -72,6 +80,35 @@ class BedCreate(BaseModel):
     bed_type: str
     section: str
     features: List[str] = []
+
+# ============================================================================
+# Startup Event - Demo Mode
+# ============================================================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize demo data if DEMO_MODE is enabled"""
+    if DEMO_MODE:
+        print("\n" + "=" * 60)
+        print("DEMO MODE ENABLED")
+        print("=" * 60)
+        print("Database will be reset with fresh demo data on startup")
+        print("To disable: Set DEMO_MODE = False in main.py")
+        print("=" * 60 + "\n")
+
+        # Delete existing database
+        db_path = Path(__file__).parent.parent / "shared" / "hospital_flow.db"
+        if db_path.exists():
+            print(f"Deleting existing database: {db_path}")
+            os.remove(db_path)
+
+        # Create fresh demo data
+        from demo_data import create_demo_data
+        create_demo_data()
+
+        print("\n" + "=" * 60)
+        print("Demo data loaded successfully!")
+        print("=" * 60 + "\n")
 
 # ============================================================================
 # REST API Endpoints - Patients
@@ -143,7 +180,7 @@ async def create_patient(patient: PatientCreate):
         chief_complaint=patient.chief_complaint,
         age=patient.age,
         gender=patient.gender,
-        notes=patient.notes
+        notes=patient.notes or ""
     )
 
     patient_data = smart_queue.get(patient_id).to_dict()
