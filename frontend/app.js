@@ -16,6 +16,17 @@ const lastRefreshEl = document.getElementById("last-refresh");
 const bedsBody = document.getElementById("beds-body");
 const bedsErrorEl = document.getElementById("beds-error");
 
+const patientsBody = document.getElementById("patients-body");
+const patientsErrorEl = document.getElementById("patients-error");
+
+const viewQueue = document.getElementById("view-queue");
+const viewBeds = document.getElementById("view-beds");
+const viewPatients = document.getElementById("view-patients");
+
+const navQueue = document.getElementById("nav-queue");
+const navBeds = document.getElementById("nav-beds");
+const navPatients = document.getElementById("nav-patients");
+
 let currentPatients = [];
 
 const modalBackdrop = document.getElementById("patient-modal-backdrop");
@@ -196,6 +207,52 @@ function renderBeds(beds) {
   });
 }
 
+function renderPatients(patients) {
+  if (!Array.isArray(patients) || patients.length === 0) {
+    patientsBody.innerHTML = `<tr><td colspan="7" class="text-muted">No patients found.</td></tr>`;
+    return;
+  }
+
+  patientsBody.innerHTML = "";
+
+  patients.forEach((p) => {
+    const tr = document.createElement("tr");
+
+    const nameCell = document.createElement("td");
+    nameCell.textContent = p.name;
+
+    const esiCell = document.createElement("td");
+    esiCell.innerHTML = `<span class="${getEsiClass(p.esi)}">ESI ${p.esi}</span>`;
+
+    const deptCell = document.createElement("td");
+    deptCell.textContent = p.department || "ED";
+
+    const statusCell = document.createElement("td");
+    statusCell.textContent = p.status;
+
+    const bedCell = document.createElement("td");
+    bedCell.textContent = p.bed_id ? p.bed_id.slice(0, 8) + "…" : "—";
+
+    const arrivalCell = document.createElement("td");
+    arrivalCell.textContent = p.arrival_ts
+      ? new Date(p.arrival_ts).toLocaleTimeString()
+      : "—";
+
+    const totalCell = document.createElement("td");
+    totalCell.textContent = fmtMinutes(p.total_er_time_minutes);
+
+    tr.appendChild(nameCell);
+    tr.appendChild(esiCell);
+    tr.appendChild(deptCell);
+    tr.appendChild(statusCell);
+    tr.appendChild(bedCell);
+    tr.appendChild(arrivalCell);
+    tr.appendChild(totalCell);
+
+    patientsBody.appendChild(tr);
+  });
+}
+
 // ------------- Button wiring -------------
 function findPatientById(patientId) {
   return currentPatients.find((p) => p.id === patientId);
@@ -365,6 +422,19 @@ async function loadBeds() {
   }
 }
 
+async function loadPatientsDb() {
+  if (!patientsBody) return;
+  patientsErrorEl.style.display = "none";
+  try {
+    const patients = await api(`/patients_db`);
+    renderPatients(patients);
+  } catch (err) {
+    patientsErrorEl.textContent = "Could not load patients: " + err.message;
+    patientsErrorEl.style.display = "block";
+    patientsBody.innerHTML = `<tr><td colspan="7" class="text-muted">Error loading patients</td></tr>`;
+  }
+}
+
 // ------------- Event handlers -------------
 
 // New patient form submit
@@ -421,8 +491,32 @@ if (modalCloseBtn && modalBackdrop) {
 }
 
 // ------------- Initial load & polling -------------
+function showView(which) {
+  if (viewQueue) viewQueue.style.display = which === "queue" ? "block" : "none";
+  if (viewBeds) viewBeds.style.display = which === "beds" ? "block" : "none";
+  if (viewPatients) viewPatients.style.display = which === "patients" ? "block" : "none";
 
-loadQueue();
-loadBeds();
+  if (navQueue) navQueue.classList.toggle("nav-tab-active", which === "queue");
+  if (navBeds) navBeds.classList.toggle("nav-tab-active", which === "beds");
+  if (navPatients) navPatients.classList.toggle("nav-tab-active", which === "patients");
+
+  if (which === "queue") {
+    loadQueue();
+  } else if (which === "beds") {
+    loadBeds();
+  } else if (which === "patients") {
+    loadPatientsDb();
+  }
+}
+
+if (navQueue) navQueue.addEventListener("click", () => showView("queue"));
+if (navBeds) navBeds.addEventListener("click", () => showView("beds"));
+if (navPatients) navPatients.addEventListener("click", () => showView("patients"));
+
+
+// ------------- Initial load & polling -------------
+
+showView("queue");     // start on Live Queue
 setInterval(loadQueue, 10_000);
 setInterval(loadBeds, 30_000);
+

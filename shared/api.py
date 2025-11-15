@@ -7,8 +7,29 @@ from pydantic import BaseModel
 
 from ..services.bed_registery import BedRegistry  # adjust import
 
+from patient_db import SQLitePatientStore
 
 router = APIRouter(tags=["v1"])
+patient_store = SQLitePatientStore()
+
+
+@router.get("/patients_db", response_model=List[PatientRead])
+def list_patients_db(
+    department: Optional[str] = Query(None),
+    include_inactive: bool = Query(True),
+):
+    """
+    Return patients from the SQLite database.
+
+    include_inactive=True => all patients
+    include_inactive=False => only active (not DISCHARGED / ADMITTED / LWBS)
+    """
+    if include_inactive:
+        patients = patient_store.list_patients(department=department)
+    else:
+        patients = patient_store.list_active_patients(department=department)
+    return [p.to_dict() for p in patients]
+
 
 # ---------- Create a patient ----------
 @router.post("/patients", response_model=PatientRead)

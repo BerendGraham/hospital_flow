@@ -13,7 +13,15 @@
     and lets you update status or trigger bed assignment.
   </p>
 
-  <div class="page">
+  <!-- Top nav -->
+  <div class="nav-bar">
+    <button id="nav-queue" class="nav-tab nav-tab-active">Live Queue</button>
+    <button id="nav-beds" class="nav-tab">Bed Database</button>
+    <button id="nav-patients" class="nav-tab">Patient Database</button>
+  </div>
+
+  <div id="view-queue" class="page">
+
     <!-- New patient form -->
     <section class="card">
       <div class="card-header">
@@ -117,8 +125,8 @@
     </section>
   </div>
 
-  <!-- Optional: Bed overview board (nice for judges) -->
-  <div class="page" style="margin-top:1rem;">
+    <!-- Bed overview view -->
+    <div id="view-beds" class="page" style="margin-top:1rem; display:none;">
     <section class="card">
       <div class="card-header">
         <h2>Bed Overview</h2>
@@ -200,7 +208,35 @@
         </div>
       </div>
     </div>
-  
+      <!-- Patient database view -->
+  <div id="view-patients" class="page" style="margin-top:1rem; display:none;">
+    <section class="card">
+      <div class="card-header">
+        <h2>Patient Database</h2>
+        <span class="text-xs text-muted">
+          All patients in the system (from the database)
+        </span>
+      </div>
+      <div id="patients-error" class="error-banner" style="display:none;"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>ESI</th>
+            <th>Department</th>
+            <th>Status</th>
+            <th>Bed</th>
+            <th>Arrival</th>
+            <th>Total ER Time</th>
+          </tr>
+        </thead>
+        <tbody id="patients-body">
+          <tr><td colspan="7" class="text-muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
     <script src="app.js"></script>
   </body>
   </html>
