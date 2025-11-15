@@ -93,8 +93,18 @@ def get_all_patients():
 
 @app.get("/queue")
 def get_queue(department: str = "ED"):
-    """Get queue for specific department (frontend compatibility)"""
-    return smart_queue.get_all_active_patients()
+    """Get waiting room patients (REGISTERED, AWAITING_TRIAGE, TRIAGED)"""
+    waiting_room_statuses = ["REGISTERED", "AWAITING_TRIAGE", "TRIAGED"]
+
+    waiting_patients = []
+    for status in waiting_room_statuses:
+        patients = smart_queue.get_patients_by_status(status)
+        waiting_patients.extend(patients)
+
+    # Sort by ESI priority (lower is higher priority), then arrival time
+    waiting_patients.sort(key=lambda p: (p['esi'], p['arrival_ts']))
+
+    return waiting_patients
 
 @app.get("/api/patients/delayed")
 def get_delayed_patients():
@@ -284,20 +294,23 @@ def estimate_eta(
     rooms_available: int = 1,
     avg_service_min: int = 20
 ):
-    """Estimate wait time for patient"""
+    """Estimate wait time for bed assignment"""
     patient = smart_queue.get(patient_id)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    # Simple ETA calculation: count patients ahead with same/higher priority
+    # Count patients in waiting room (REGISTERED, AWAITING_TRIAGE, TRIAGED) who are ahead
+    # These are patients waiting for bed assignment
+    waiting_room_statuses = ["REGISTERED", "AWAITING_TRIAGE", "TRIAGED"]
+
     patients_ahead = 0
     for p in smart_queue._patients.values():
-        if p.status in ["AWAITING_TRIAGE", "TRIAGED", "AWAITING_BED"]:
+        if p.status in waiting_room_statuses and p.department == department:
             # Higher priority (lower ESI) or same ESI but earlier arrival
             if p.esi < patient.esi or (p.esi == patient.esi and p.arrival_ts < patient.arrival_ts):
                 patients_ahead += 1
 
-    eta_minutes = (patients_ahead / rooms_available) * avg_service_min
+    eta_minutes = (patients_ahead / max(1, rooms_available)) * avg_service_min
 
     return {
         "patient_id": patient_id,
