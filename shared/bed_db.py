@@ -1,4 +1,4 @@
-# beds_db.py
+# bed_db.py
 """
 Database layer for hospital beds.
 
@@ -11,10 +11,10 @@ import json
 import sqlite3
 from typing import Iterable, List, Optional, Set
 
-from bed import Bed  # assumes bed.py is in the same folder
+from bed import Bed
 
-# Change this to ":memory:" if you truly want it in-memory only
-DB_PATH = "hospital_beds.db"
+# Use same database as the rest of the application
+DB_PATH = "hospital_flow.db"
 
 
 class SQLiteBedStore:

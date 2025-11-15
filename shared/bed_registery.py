@@ -11,8 +11,8 @@ SQLite database (hospital_beds.db by default).
 import threading
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from bed import Bed              # <-- adjust to your real import path if needed
-from beds_DB import SQLiteBedStore  # <-- adjust to your real import path if needed
+from bed import Bed
+from bed_db import SQLiteBedStore
 
 
 class BedRegistry:
