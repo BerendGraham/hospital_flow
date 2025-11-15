@@ -16,6 +16,11 @@ const lastRefreshEl = document.getElementById("last-refresh");
 const bedsBody = document.getElementById("beds-body");
 const bedsErrorEl = document.getElementById("beds-error");
 
+let currentPatients = [];
+
+const modalBackdrop = document.getElementById("patient-modal-backdrop");
+const modalCloseBtn = document.getElementById("patient-modal-close");
+
 // ------------- API helper -------------
 
 async function api(path, options = {}) {
@@ -58,6 +63,7 @@ function getEsiClass(esi) {
 // ------------- Queue rendering -------------
 
 function renderQueue(patients) {
+  currentPatients = patients;
   if (!Array.isArray(patients) || patients.length === 0) {
     queueBody.innerHTML = `<tr><td colspan="7" class="text-muted">No active patients in this department.</td></tr>`;
     return;
@@ -73,11 +79,14 @@ function renderQueue(patients) {
     const nameCell = document.createElement("td");
     nameCell.innerHTML = `
       <div>
-        <div>${p.name}</div>
+        <button class="link-button patient-name" data-patient-id="${p.id}">
+          ${p.name}
+        </button>
         <div class="text-xs text-muted">${p.chief_complaint || ""}</div>
         <div class="text-xs text-muted">ID: ${p.id.slice(0, 8)}…</div>
       </div>
     `;
+
 
     const esiCell = document.createElement("td");
     esiCell.innerHTML = `<span class="${getEsiClass(p.esi)}">ESI ${p.esi}</span>`;
@@ -141,7 +150,7 @@ function renderQueue(patients) {
 
     queueBody.appendChild(tr);
   });
-
+  
   wireRowButtons();
 }
 
@@ -188,6 +197,34 @@ function renderBeds(beds) {
 }
 
 // ------------- Button wiring -------------
+function findPatientById(patientId) {
+  return currentPatients.find((p) => p.id === patientId);
+}
+
+function openPatientModal(patientId) {
+  const p = findPatientById(patientId);
+  if (!p || !modalBackdrop) return;
+
+  document.getElementById("modal-patient-name").textContent = p.name;
+  document.getElementById("modal-patient-id").textContent = p.id;
+  document.getElementById("modal-patient-esi").textContent = p.esi;
+  document.getElementById("modal-patient-age").textContent = p.age ?? "—";
+  document.getElementById("modal-patient-gender").textContent = p.gender ?? "—";
+  document.getElementById("modal-patient-dept").textContent = p.department ?? deptFilter.value;
+  document.getElementById("modal-patient-status").textContent = p.status;
+  document.getElementById("modal-patient-bed").textContent = p.bed_id || "Unassigned";
+  document.getElementById("modal-patient-wait").textContent = fmtMinutes(p.time_in_current_status_minutes);
+  document.getElementById("modal-patient-total").textContent = fmtMinutes(p.total_er_time_minutes);
+  document.getElementById("modal-patient-chief").textContent = p.chief_complaint || "—";
+  document.getElementById("modal-patient-notes").textContent = p.notes || "—";
+
+  modalBackdrop.style.display = "flex";
+}
+
+function closePatientModal() {
+  if (!modalBackdrop) return;
+  modalBackdrop.style.display = "none";
+}
 
 function wireRowButtons() {
   // Save status
@@ -258,7 +295,14 @@ function wireRowButtons() {
       }
     };
   });
-
+    // Open patient detail modal when clicking on name
+    document.querySelectorAll(".patient-name").forEach((btn) => {
+      btn.onclick = () => {
+        const patientId = btn.getAttribute("data-patient-id");
+        openPatientModal(patientId);
+      };
+    });
+  
   // Assign bed -> calls beds Database (DB) via /beds/assign_best
   document.querySelectorAll("[data-assign-bed]").forEach((btn) => {
     btn.onclick = async () => {
@@ -360,6 +404,22 @@ newPatientForm.addEventListener("submit", async (e) => {
 deptFilter.addEventListener("change", () => {
   loadQueue();
 });
+
+if (modalCloseBtn && modalBackdrop) {
+  modalCloseBtn.addEventListener("click", closePatientModal);
+
+  modalBackdrop.addEventListener("click", (e) => {
+    if (e.target === modalBackdrop) {
+      closePatientModal();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closePatientModal();
+    }
+  });
+}
 
 // ------------- Initial load & polling -------------
 
