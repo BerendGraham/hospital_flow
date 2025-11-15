@@ -106,6 +106,16 @@ def get_queue(department: str = "ED"):
 
     return waiting_patients
 
+@app.get("/patients_db")
+def get_patients_database(department: str = "ED"):
+    """Get ALL patients from database (including discharged/admitted)"""
+    all_patients = list(smart_queue._patients.values())
+    # Filter by department
+    dept_patients = [p for p in all_patients if p.department == department]
+    # Sort by arrival time (most recent first)
+    dept_patients.sort(key=lambda p: p.arrival_ts, reverse=True)
+    return [p.to_dict() for p in dept_patients]
+
 @app.get("/api/patients/delayed")
 def get_delayed_patients():
     """Get patients exceeding ESI wait thresholds"""
@@ -150,6 +160,13 @@ async def update_patient_status(patient_id: str, data: PatientStatusUpdate, depa
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
+    # Validate: Cannot set status to IN_BED without a bed assignment
+    if data.new_status == "IN_BED" and not patient.bed_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot set status to IN_BED: Patient must be assigned a bed first. Use 'Assign bed' button."
+        )
+
     smart_queue.update_status(patient_id, data.new_status)
     patient_data = patient.to_dict()
 
@@ -164,6 +181,13 @@ async def update_patient_status_compat(patient_id: str, status: str, department:
     patient = smart_queue.get(patient_id)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Validate: Cannot set status to IN_BED without a bed assignment
+    if status == "IN_BED" and not patient.bed_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot set status to IN_BED: Patient must be assigned a bed first. Use 'Assign bed' button."
+        )
 
     smart_queue.update_status(patient_id, status)
     patient_data = patient.to_dict()
