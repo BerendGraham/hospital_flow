@@ -115,14 +115,8 @@ async def startup_event():
 # REST API Endpoints - Patients
 # ============================================================================
 
-@app.get("/")
-def root():
-    return {
-        "service": "ER Flow Dashboard API",
-        "status": "running",
-        "patients_in_queue": len(smart_queue._patients),
-        "total_beds": len(bed_registry.store.list_beds())
-    }
+# Root route removed to allow StaticFiles to serve frontend at "/"
+# API status available at other endpoints like /api/patients, /api/beds
 
 @app.get("/api/patients")
 def get_all_patients():
