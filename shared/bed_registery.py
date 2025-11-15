@@ -1,51 +1,145 @@
-# beds.py
-from typing import Dict, List, Optional, Iterable
-from ..smart_core.bed import Bed
+# bed_registery.py
+"""
+High-level bed management service.
+
+This module defines BedRegistry, which is the API the rest of your
+backend should use to work with beds. It delegates all persistence
+to SQLiteBedStore in beds_db.py, so every change is mirrored to the
+SQLite database (hospital_beds.db by default).
+"""
+
+import threading
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from bed import Bed              # <-- adjust to your real import path if needed
+from beds_db import SQLiteBedStore  # <-- adjust to your real import path if needed
+
 
 class BedRegistry:
     """
     Public service API for bed management.
-    Uses an in-memory SQLite store and a process-level mutex for safety.
+
+    Key ideas:
+    - The actual data is stored in SQLite via SQLiteBedStore.
+    - BedRegistry adds concurrency safety and higher-level operations
+      like "assign the best available bed to this patient".
     """
-    def __init__(self):
-        self.store = SQLiteBedStore()
+
+    def __init__(self, store: Optional[SQLiteBedStore] = None) -> None:
+        # You can inject a custom store for tests; otherwise use the default.
+        self.store = store or SQLiteBedStore()
         self._lock = threading.Lock()
 
-    # --- CRUD-ish ---
-    def add_bed(self, bed_type: str, section: str, features: Iterable[str] = ()) -> str:
+    # ------------------------------------------------------------------
+    # Basic CRUD-like operations
+    # ------------------------------------------------------------------
+    def add_bed(
+        self,
+        bed_type: str,
+        section: str,
+        features: Iterable[str] = (),
+    ) -> str:
+        """
+        Create a new Bed, persist it, and return the bed's id.
+        """
+        bed = Bed(bed_type=bed_type, section=section, features=set(features))
         with self._lock:
-            return self.store.add_bed(Bed(bed_type=bed_type, section=section, features=set(features)))
+            self.store.insert_bed(bed)
+        return bed.id
 
     def upsert_bed(self, bed: Bed) -> str:
+        """
+        Insert or update a Bed object.
+        If the id already exists, we overwrite that row.
+        """
         with self._lock:
-            return self.store.upsert_bed(bed)
+            existing = self.store.get_bed(bed.id)
+            if existing:
+                self.store.update_bed(bed)
+            else:
+                self.store.insert_bed(bed)
+        return bed.id
 
-    def list_beds(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_beds(
+        self,
+        status: Optional[str] = None,
+        bed_type: Optional[str] = None,
+        section: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return beds as a list of plain dicts, ready to JSON-serialize.
+        """
         with self._lock:
-            return [b.to_dict() for b in self.store.list_beds(status=status)]
+            beds = self.store.list_beds(
+                status=status,
+                bed_type=bed_type,
+                section=section,
+            )
+        return [b.to_dict() for b in beds]
 
     def get(self, bed_id: str) -> Optional[Bed]:
+        """
+        Return the Bed object for a given id, or None.
+        """
         with self._lock:
             return self.store.get_bed(bed_id)
 
-    # --- Status changes ---
+    # ------------------------------------------------------------------
+    # Status changes
+    # ------------------------------------------------------------------
     def free_bed(self, bed_id: str) -> None:
+        """
+        Mark a bed as OPEN and clear any patient.
+        """
         with self._lock:
-            self.store.free_bed(bed_id)
+            bed = self.store.get_bed(bed_id)
+            if not bed:
+                return
+            bed.status = "OPEN"
+            bed.patient_id = None
+            self.store.update_bed(bed)
 
-    def hold_bed(self, bed_id: str, patient_id: Optional[str] = None) -> None:
+    def hold_bed(
+        self,
+        bed_id: str,
+        patient_id: Optional[str] = None,
+    ) -> None:
+        """
+        Mark a bed as HELD, optionally tying it to a patient.
+        """
         with self._lock:
-            self.store.hold_bed(bed_id, patient_id)
+            bed = self.store.get_bed(bed_id)
+            if not bed:
+                return
+            bed.status = "HELD"
+            bed.patient_id = patient_id
+            self.store.update_bed(bed)
 
     def occupy_bed(self, bed_id: str, patient_id: str) -> None:
-        with self._lock:
-            # Ensure patient not already occupying another bed
-            existing = self.store.get_bed_by_patient(patient_id)
-            if existing and existing.id != bed_id:
-                self.store.free_bed(existing.id)
-            self.store.occupy_bed(bed_id, patient_id)
+        """
+        Mark the bed as OCCUPIED by the given patient.
 
-    # --- Matching & assignment ---
+        If the patient already occupies another bed, that bed is freed
+        first, so each patient can only have at most one bed.
+        """
+        with self._lock:
+            # If patient already has a bed, free it
+            current = self.store.get_bed_by_patient(patient_id)
+            if current and current.id != bed_id:
+                current.status = "OPEN"
+                current.patient_id = None
+                self.store.update_bed(current)
+
+            bed = self.store.get_bed(bed_id)
+            if not bed:
+                return
+            bed.status = "OCCUPIED"
+            bed.patient_id = patient_id
+            self.store.update_bed(bed)
+
+    # ------------------------------------------------------------------
+    # Matching & assignment
+    # ------------------------------------------------------------------
     def assign_best_available(
         self,
         patient_id: str,
@@ -54,39 +148,45 @@ class BedRegistry:
         required_features: Optional[Iterable[str]] = None,
     ) -> Optional[str]:
         """
-        Assigns the first OPEN bed that matches the patient's constraints.
-        Returns bed_id or None.
+        Assign the first OPEN bed that matches the constraints.
+
+        Returns the bed_id or None if no matching open bed is found.
         """
         with self._lock:
-            match = self.store.find_open_bed(needed_bed_type, needed_section, required_features)
+            match = self.store.find_open_bed(
+                needed_bed_type=needed_bed_type,
+                needed_section=needed_section,
+                required_features=required_features,
+            )
             if not match:
                 return None
-            # free any current bed first (single-occupancy invariant)
+
+            # Free any current bed for this patient (single-occupancy invariant)
             current = self.store.get_bed_by_patient(patient_id)
             if current:
-                self.store.free_bed(current.id)
-            self.store.occupy_bed(match.id, patient_id)
+                current.status = "OPEN"
+                current.patient_id = None
+                self.store.update_bed(current)
+
+            # Occupy the new bed
+            match.status = "OCCUPIED"
+            match.patient_id = patient_id
+            self.store.update_bed(match)
             return match.id
 
     def release_patient(self, patient_id: str) -> Optional[str]:
         """
-        Free the bed currently occupied by patient_id (if any).
-        Returns freed bed_id or None.
+        Free whatever bed this patient is currently occupying.
+        Returns the bed id that was freed, or None if they had no bed.
         """
         with self._lock:
-            b = self.store.get_bed_by_patient(patient_id)
-            if not b:
+            bed = self.store.get_bed_by_patient(patient_id)
+            if not bed:
                 return None
-            self.store.free_bed(b.id)
-            return b.id
-
-    def move_patient_to_bed(self, patient_id: str, to_bed_id: str) -> Tuple[Optional[str], str]:
-        """
-        Force a move to a specific OPEN bed (manual override).
-        Returns (from_bed_id, to_bed_id).
-        """
-        with self._lock:
-            return self.store.move_patient_atomic(to_bed_id, patient_id)
+            bed.status = "OPEN"
+            bed.patient_id = None
+            self.store.update_bed(bed)
+            return bed.id
 
     def transfer_patient_best_match(
         self,
@@ -96,42 +196,65 @@ class BedRegistry:
         required_features: Optional[Iterable[str]] = None,
     ) -> Optional[Tuple[Optional[str], str]]:
         """
-        Transfer patient to the best available OPEN bed that matches constraints.
-        Frees the old bed in the same critical section.
-        Returns (from_bed_id, to_bed_id) or None if no match.
+        Transfer a patient to a better-matching OPEN bed.
+
+        Frees the old bed and occupies the new one atomically.
+        Returns (from_bed_id, to_bed_id) or None if no match exists.
         """
         with self._lock:
-            match = self.store.find_open_bed(needed_bed_type, needed_section, required_features)
+            match = self.store.find_open_bed(
+                needed_bed_type=needed_bed_type,
+                needed_section=needed_section,
+                required_features=required_features,
+            )
             if not match:
                 return None
+
             current = self.store.get_bed_by_patient(patient_id)
-            from_id = current.id if current else None
-            if from_id:
-                self.store.free_bed(from_id)
-            self.store.occupy_bed(match.id, patient_id)
+            from_id: Optional[str] = None
+            if current:
+                from_id = current.id
+                current.status = "OPEN"
+                current.patient_id = None
+                self.store.update_bed(current)
+
+            match.status = "OCCUPIED"
+            match.patient_id = patient_id
+            self.store.update_bed(match)
+
             return (from_id, match.id)
 
-    def swap_patients_between_beds(self, bed_id_a: str, bed_id_b: str) -> Tuple[Optional[str], Optional[str]]:
+    def swap_patients_between_beds(
+        self,
+        bed_id_a: str,
+        bed_id_b: str,
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
-        Swap patients between two OCCUPIED beds.
-        Returns (patient_a, patient_b).
+        Swap patients between two beds.
+
+        Returns (patient_in_a, patient_in_b) after the swap.
         """
         with self._lock:
             a = self.store.get_bed(bed_id_a)
             b = self.store.get_bed(bed_id_b)
             if not a or not b:
-                raise ValueError("One or both beds not found")
-            if a.status != "OCCUPIED" or b.status != "OCCUPIED":
-                raise ValueError("Both beds must be OCCUPIED to swap")
+                return (None, None)
+
             pa, pb = a.patient_id, b.patient_id
-            # swap
-            self.store.occupy_bed(bed_id_a, pb)
-            self.store.occupy_bed(bed_id_b, pa)
+            a.patient_id, b.patient_id = pb, pa
+
+            # Keep status consistent: a bed with a patient is OCCUPIED,
+            # an empty bed is OPEN.
+            a.status = "OCCUPIED" if a.patient_id else "OPEN"
+            b.status = "OCCUPIED" if b.patient_id else "OPEN"
+
+            self.store.update_bed(a)
+            self.store.update_bed(b)
             return (pa, pb)
 
-    # -----------------------------
-    # Hooks to call from your API
-    # -----------------------------
+    # ------------------------------------------------------------------
+    # Hooks to call from your API (optional helpers)
+    # ------------------------------------------------------------------
     def on_patient_added(
         self,
         patient_id: str,
@@ -142,15 +265,23 @@ class BedRegistry:
     ) -> Optional[str]:
         """
         Call when a new patient enters the system.
-        Optionally try immediate assignment to an OPEN bed.
+
+        If auto_assign=True, immediately try to place them in a matching
+        OPEN bed. Returns the assigned bed_id or None.
         """
         if not auto_assign:
             return None
-        return self.assign_best_available(patient_id, needed_bed_type, needed_section, required_features)
+        return self.assign_best_available(
+            patient_id,
+            needed_bed_type=needed_bed_type,
+            needed_section=needed_section,
+            required_features=required_features,
+        )
 
     def on_patient_removed(self, patient_id: str) -> Optional[str]:
         """
-        Call when a patient is discharged/removed; frees their bed if occupied.
+        Call when a patient is discharged/removed; frees their bed if any.
+        Returns the bed id that was freed, or None.
         """
         return self.release_patient(patient_id)
 
@@ -163,9 +294,16 @@ class BedRegistry:
         auto_transfer: bool = False,
     ) -> Optional[Tuple[Optional[str], str]]:
         """
-        Call when bed requirements change.
-        If auto_transfer=True, try to move them to a matching OPEN bed now.
+        Call when bed requirements (e.g., ICU vs ED section) change.
+
+        If auto_transfer=True, try to move the patient immediately to a
+        matching OPEN bed. Returns (from_bed_id, to_bed_id) or None.
         """
         if not auto_transfer:
             return None
-        return self.transfer_patient_best_match(patient_id, needed_bed_type, needed_section, required_features)
+        return self.transfer_patient_best_match(
+            patient_id,
+            needed_bed_type=needed_bed_type,
+            needed_section=needed_section,
+            required_features=required_features,
+        )

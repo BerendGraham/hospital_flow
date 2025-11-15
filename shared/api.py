@@ -3,6 +3,10 @@ from typing import List, Optional
 
 from ..schemas.patient import PatientCreate, PatientRead, UpdateESI, UpdateStatus, ETAResponse
 from ..services.state import get_queue
+from pydantic import BaseModel
+
+from ..services.bed_registery import BedRegistry  # adjust import
+
 
 router = APIRouter(tags=["v1"])
 
@@ -81,3 +85,52 @@ def eta(patient_id: str, department: str = Query("ED"),
         patient_id=patient_id,
         eta_minutes=sq.estimate_wait_minutes(patient_id, rooms_available, avg_service_min)
     )
+
+router = APIRouter(tags=["v1"])
+
+# Single global BedRegistry for demo
+bed_registry = BedRegistry()
+
+# ---------- Bed schemas ----------
+
+class BedRead(BaseModel):
+    id: str
+    bed_type: str
+    section: str
+    features: List[str]
+    status: str
+    patient_id: Optional[str] = None
+
+    @classmethod
+    def from_bed(cls, bed):
+        d = bed.to_dict()
+        return cls(**d)
+
+class AssignBestBedRequest(BaseModel):
+    patient_id: str
+    needed_bed_type: Optional[str] = None
+    needed_section: Optional[str] = None
+    required_features: List[str] = []
+
+# ---------- Existing patient endpoints here ----------
+# (leave your current /patients, /queue, /eta, etc, as they are)
+# ...
+
+# ---------- Beds: list ----------
+@router.get("/beds", response_model=List[BedRead])
+def list_beds(status: Optional[str] = None):
+    beds = bed_registry.list_beds(status=status)
+    return [BedRead.from_bed(b) for b in beds]
+
+# ---------- Beds: assign best ----------
+@router.post("/beds/assign_best", response_model=BedRead)
+def assign_best_bed(payload: AssignBestBedRequest):
+    bed = bed_registry.assign_best_available(
+        patient_id=payload.patient_id,
+        needed_bed_type=payload.needed_bed_type,
+        needed_section=payload.needed_section,
+        required_features=payload.required_features,
+    )
+    if not bed:
+        raise HTTPException(status_code=404, detail="No matching open bed")
+    return BedRead.from_bed(bed)

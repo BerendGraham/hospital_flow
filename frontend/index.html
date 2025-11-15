@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ER Triage & Bed Assignment Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h1>ER Triage & Bed Assignment</h1>
+  <p class="text-muted">
+    Patients are prioritized by Emergency Severity Index (ESI) and arrival time. This dashboard shows the live queue
+    and lets you update status or trigger bed assignment.
+  </p>
+
+  <div class="page">
+    <!-- New patient form -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Register New Patient</h2>
+        <span class="badge text-xs">Hackathon demo</span>
+      </div>
+
+      <div id="form-error" class="error-banner" style="display:none;"></div>
+
+      <form id="new-patient-form">
+        <label>
+          Name
+          <input type="text" name="name" required />
+        </label>
+
+        <label>
+          Emergency Severity Index (ESI)
+          <select name="esi" required>
+            <option value="">Select...</option>
+            <option value="1">1 (Resuscitation)</option>
+            <option value="2">2 (Emergent)</option>
+            <option value="3">3 (Urgent)</option>
+            <option value="4">4 (Less urgent)</option>
+            <option value="5">5 (Non-urgent)</option>
+          </select>
+        </label>
+
+        <label>
+          Age
+          <input type="number" name="age" min="0" required />
+        </label>
+
+        <label>
+          Gender
+          <select name="gender" required>
+            <option value="">Select...</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
+
+        <label>
+          Chief Complaint
+          <textarea name="chief_complaint" placeholder="Chest pain, shortness of breath, etc." required></textarea>
+        </label>
+
+        <label>
+          Department
+          <select name="department">
+            <option value="ED" selected>ED (Emergency Department)</option>
+            <option value="ICU">ICU</option>
+            <option value="PEDS">Pediatrics</option>
+          </select>
+        </label>
+
+        <label>
+          Notes (optional)
+          <textarea name="notes"></textarea>
+        </label>
+
+        <button type="submit" id="submit-btn">Add to queue</button>
+      </form>
+    </section>
+
+    <!-- Queue / board -->
+    <section class="card">
+      <div class="card-header">
+        <h2>Live Queue</h2>
+        <div class="flex">
+          <label class="text-xs">
+            Department
+            <select id="department-filter" class="inline-select">
+              <option value="ED" selected>ED</option>
+              <option value="ICU">ICU</option>
+              <option value="PEDS">PEDS</option>
+            </select>
+          </label>
+          <span id="last-refresh" class="text-xs text-muted">Last refresh: …</span>
+        </div>
+      </div>
+
+      <div id="queue-error" class="error-banner" style="display:none;"></div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Patient</th>
+            <th>ESI</th>
+            <th>Status</th>
+            <th>Wait / Total</th>
+            <th>Bed</th>
+            <th>ETA</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="queue-body">
+          <tr><td colspan="7" class="text-muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- Optional: Bed overview board (nice for judges) -->
+  <div class="page" style="margin-top:1rem;">
+    <section class="card">
+      <div class="card-header">
+        <h2>Bed Overview</h2>
+        <span class="text-xs text-muted">Backed by SQLite (hospital_beds.db)</span>
+      </div>
+      <div id="beds-error" class="error-banner" style="display:none;"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>Bed</th>
+            <th>Type</th>
+            <th>Section</th>
+            <th>Features</th>
+            <th>Status</th>
+            <th>Patient</th>
+          </tr>
+        </thead>
+        <tbody id="beds-body">
+          <tr><td colspan="6" class="text-muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
