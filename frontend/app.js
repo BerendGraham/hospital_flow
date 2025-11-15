@@ -1,8 +1,8 @@
 // app.js
 
-// Adjust this to match how you mount your router:
-// e.g. "/v1" if you use app.include_router(router, prefix="/v1")
-const API_BASE = "http://localhost:8000"; // add "/v1" if needed
+// Use relative URL for API calls - works for both local dev and production
+// When deployed, this will use the same domain as the frontend
+const API_BASE = window.location.origin;
 
 const newPatientForm = document.getElementById("new-patient-form");
 const submitBtn = document.getElementById("submit-btn");
@@ -580,8 +580,8 @@ if (navPatients) navPatients.addEventListener("click", () => showView("patients"
 
 // ------------- WebSocket Real-Time Updates -------------
 
-// Connect to Socket.IO server
-const socket = io("http://localhost:8000");
+// Connect to Socket.IO server - use current origin for both local and production
+const socket = io(window.location.origin);
 
 // Listen for connection
 socket.on("connect", () => {
